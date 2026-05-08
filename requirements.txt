@@ -1,0 +1,16 @@
+# DeepSeek API 学习项目 - Python 依赖
+# 声明：本项目完全由 AI 生成，仅供个人学习研究使用
+# 使用方法: pip install -r requirements.txt
+
+# Web 框架
+fastapi>=0.100.0
+uvicorn>=0.23.0
+
+# HTTP 客户端
+requests>=2.31.0
+
+# 数据验证
+pydantic>=2.0.0
+
+# 文件上传支持
+python-multipart>=0.0.6
