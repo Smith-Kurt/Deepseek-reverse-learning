@@ -405,7 +405,8 @@ class DeepSeekClient:
         # 5. 解析 SSE 流
         message_id = None
         current_event = None
-        is_thinking = False  # 是否在深度思考中
+        is_thinking = False
+        is_searching = False
         
         for line in resp.iter_lines():
             if not line:
@@ -451,19 +452,47 @@ class DeepSeekClient:
                             frag_type = frag.get("type", "")
                             frag_content = frag.get("content")
                             
-                            # 更新思考状态
                             if frag_type == "THINK":
                                 is_thinking = True
+                                is_searching = False
+                            elif frag_type == "SEARCH":
+                                is_searching = True
+                                is_thinking = False
                             elif frag_type == "RESPONSE":
                                 is_thinking = False
+                                is_searching = False
                             
-                            # 只提取 RESPONSE 类型的 content
                             if frag_type == "RESPONSE" and frag_content and isinstance(frag_content, str):
                                 content = frag_content
                     
+                    # 格式5: BATCH 操作 {"p": "response", "o": "BATCH", "v": [...]}
+                    elif data.get("o") == "BATCH" and isinstance(data.get("v"), list):
+                        for sub_op in data.get("v", []):
+                            sub_p = sub_op.get("p", "")
+                            sub_o = sub_op.get("o", "")
+                            sub_v = sub_op.get("v")
+                            
+                            if sub_o == "APPEND" and "fragment" in sub_p.lower():
+                                if isinstance(sub_v, list) and sub_v:
+                                    frag = sub_v[0]
+                                    frag_type = frag.get("type", "")
+                                    frag_content = frag.get("content")
+                                    
+                                    if frag_type == "THINK":
+                                        is_thinking = True
+                                        is_searching = False
+                                    elif frag_type == "SEARCH":
+                                        is_searching = True
+                                        is_thinking = False
+                                    elif frag_type == "RESPONSE":
+                                        is_thinking = False
+                                        is_searching = False
+                                        if frag_content and isinstance(frag_content, str):
+                                            content = frag_content
+                    
                     # 格式2: 简单字符串增量 {"v": "Hello"}
                     elif isinstance(data.get("v"), str):
-                        if not is_thinking:
+                        if not is_thinking and not is_searching:
                             content = data["v"]
                     
                     # 格式3: 新 fragment 开始 {"p": "response/fragments", "o": "APPEND", "v": [...]}
@@ -476,24 +505,32 @@ class DeepSeekClient:
                             
                             if frag_type == "THINK":
                                 is_thinking = True
+                                is_searching = False
+                            elif frag_type == "SEARCH":
+                                is_searching = True
+                                is_thinking = False
                             elif frag_type == "RESPONSE":
                                 is_thinking = False
-                                # 提取新 RESPONSE fragment 的初始内容
+                                is_searching = False
                                 if frag_content and isinstance(frag_content, str):
                                     content = frag_content
                     
                     # 格式4: 增量更新 {"p": "...", "o": "APPEND", "v": "!"}
                     elif data.get("o") == "APPEND" and isinstance(data.get("v"), str):
                         path = data.get("p", "")
+                        path_upper = path.upper()
                         
-                        # 检查路径判断类型
-                        if "THINK" in path.upper():
+                        if "THINK" in path_upper:
                             is_thinking = True
-                        elif "RESPONSE" in path.upper():
+                            is_searching = False
+                        elif "SEARCH" in path_upper:
+                            is_searching = True
                             is_thinking = False
+                        elif "RESPONSE" in path_upper:
+                            is_thinking = False
+                            is_searching = False
                         
-                        # 只有不在思考中才提取内容
-                        if not is_thinking:
+                        if not is_thinking and not is_searching:
                             content = data["v"]
                     
                     # 过滤掉状态文本
